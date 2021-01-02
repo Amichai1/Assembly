@@ -1,5 +1,6 @@
 # Assembly
 code for MSP430 run with IAR.
+
 This project is an example for the diffrent use of the Timer in msp430g2553.h micro controller.
 for use it well you need to connect 1 and 2 PORT as describe:
        - P2.0 + P2.1 to pull-up button
