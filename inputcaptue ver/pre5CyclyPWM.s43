@@ -1,0 +1,42 @@
+#include "msp430g2553.h"
+
+;========================= CyclyPWM Module ========================================
+         MODULE CyclyPWM
+         PUBLIC PWM
+         EXTERN Mode,DutyCycle
+         RSEG   CODE
+        
+;------------------------- Main CountUp ----------------------------------------
+
+PWM      mov.w   #26,DutyCycle              
+         bis.b   #DIVS0+DIVS1,BCSCTL2
+                
+         ;TIMER0_A count 5 sec       
+         mov.w   #CCIE,&TACCTL0                   ; CCR0 interrupt enabled
+         mov.w   #40960,&CCR0                     ; CCR0 counts to 40960
+         mov.w   #TASSEL_2+MC_3+ID_3,&TA0CTL      ; SMCLK,count up/down,divide by 8
+         
+         ;TIMER1_A 1 KHZ PWM                 
+         mov.w   #127,&TA1CCR0                    ; CCR0 counts to 130 = 1 KHZ
+         mov.w   #OUTMOD_7,&TA1CCTL1
+         mov.w   DutyCycle,&TA1CCR1
+         mov.w   #TASSEL_2+MC_1+ID_0,&TA1CTL      ; SMCLK,count up,divide by 8         
+
+Duty     bis.w   #CPUOFF+GIE,SR                   ;Enter Sleep Mode LPM0
+         cmp.b   #2,Mode 
+         jz      Duty
+RESET2   mov.w   #MC_0,&TA1CTL                    ;stop TIMER1_A
+         mov.w   #MC_0,&TA0CTL                    ;stop TIMER0_A
+         bic.w   #CCIE,&TACCTL0                   ; CCR0 interrupt disabled
+         RET
+         
+         ENDMOD
+      
+;-------------------------------------------------------------------------------      
+      
+         END
+         
+         
+         
+         
+         
