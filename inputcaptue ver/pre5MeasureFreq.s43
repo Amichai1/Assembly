@@ -1,0 +1,77 @@
+#include "msp430g2553.h"
+Rigth  EQU   0x14
+Left   EQU   0x10
+;======================= Macro Mui Fun =========================================
+
+;------------------------- prep LCD command ------------------------------------
+
+LCD_Macro3  MACRO  command,delay,RS
+            push.b command
+            push.w delay
+            push.w RS
+            call   #Lcd_cmd
+            ENDM
+
+;------------------------- prep string to LCD func -----------------------------
+
+
+prepPrint   MACRO  string_address  
+            push.w string_address
+            call   #LCDPrint
+            ENDM
+
+;------------------------- Movecursor ------------------------------------------
+
+Movecursor3 MACRO     Direction3,Times3
+            LOCAL     MoveLoop3
+            mov.w     Times3,R12
+MoveLoop3   LCD_Macro3 Direction3,#1750,#0
+            dec       R12
+            jnz       MoveLoop3
+            ENDM 
+           
+           
+
+;========================= FreqMeasure Module ==================================
+         
+         MODULE FreqMeasure
+         PUBLIC freq
+         EXTERN Mode,LCDfreq,HZunit,Lcd_cmd,LCDPrint,RigthChar,LeftChar,Freqflag;Frequency
+         RSEG   CODE
+
+;------------------------- Main FreqMeasure ------------------------------------
+
+freq     mov.b #0x01,Freqflag
+         LCD_Macro3   #0x01,#1750,#0  ;Clean LCD
+         LCD_Macro3   #0x02,#1750,#0  ;move cursor to the 1st line
+         prepPrint    #LCDfreq
+         LCD_Macro3   #0xc0,#1750,#0  ;move cursor to the 2st line
+         Movecursor3  #Rigth,#3
+         prepPrint    #HZunit
+         Movecursor3  #Left,#5            
+         
+         ;inisialize 1sec count up clk       
+         bis.b #DIVS0+DIVS1,BCSCTL2             ;div by 8 the SMCLK                
+         bic.w #MC1+MC0,&TA1CTL
+         clr.w &TA1R
+         mov.w #TASSEL_2+MC_2+ID_2+TAIE,&TA1CTL
+         mov.w #CM_1+CAP+SCS+CCIE,&TA1CCTL2
+         
+         
+SlpLoop  bis.w      #CPUOFF+GIE,SR                     ;Enter Sleep Mode LPM0 between 1sec to the next
+         cmp.b      #3,Mode
+         jz         SlpLoop         
+RESET3   mov.w      #MC_0,&TA1CTL                 ;stop TIMER0_A
+         bic.w      #CCIE,&TA1CCTL1               ; CCR1 interrupt disabled
+         bic.w      #CCIE,&TA1CCTL2               ; CCR0 interrupt disabled
+         LCD_Macro3 #0x01,#1750,#0                ;Clean LCD
+         LCD_Macro3 #0x02,#1750,#0                ;move cursor to the 1st line
+         RET         
+          
+         ENDMOD
+
+;-------------------------------------------------------------------------------
+
+         END
+         
+         

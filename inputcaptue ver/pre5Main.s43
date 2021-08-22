@@ -1,0 +1,200 @@
+#include "msp430g2553.h"
+#define  LCD         &P1OUT
+#define  LcdControl  &P2OUT
+#define  Flags       &P2IFG
+
+;======================= Macro Fun =============================================
+
+;------------------------- Debounce --------------------------------------------
+
+Debounce    MACRO  cycles
+            LOCAL  DeLoop
+            mov.w  cycles,R13     
+DeLoop      dec.w  R13                     
+            jnz    DeLoop
+            ENDM 
+                      
+;========================= Main Code ===========================================
+
+         NAME   Main
+         PUBLIC Main
+         PUBLIC Mode,Counter,RigthChar,LeftChar,Chars
+         PUBLIC thousands10,thousands,Hundreds,Dozens,unity,Hexnum
+         PUBLIC cyclenum,cyclenum1,cyclenum2
+         PUBLIC FreqShow,RigthChar,LeftChar,Frequency1,Frequency2,FreqNow
+         PUBLIC Freq1,Freq2,Freq3,Freq4,Freq5,Freq6,Freq7,Freq8,Freq9,Freq10
+         PUBLIC Freq11,Freq12,Freq13,Freq14,Freq15,FreqShow,Freqflag
+         PUBLIC DutyCycle,DutyFlag,LCDfreq,HZunit;,Frequency
+         EXTERN ConfSYS,ConfLCD,Lcd_cmd,freqLCD
+         EXTERN CountUp,PWM,freq,FreqMesu 
+         EXTERN CountLCD 
+         
+         ORG  0x0200                       ;Flash begin at address 0xc000
+
+;------------------------- variable --------------------------------------------
+
+DutyCycle DW 0
+DutyFlag  DW 0
+
+Counter   DW 0
+RigthChar DW 0x000f
+LeftChar  DW 0x00f0
+Chars     DB '0123456789ABCDEF'
+
+LCDfreq   DB "The frequency is"
+HZunit    DB "00000 [HZ]"
+
+cyclenum      DW 0
+cyclenum1     DW 0
+cyclenum2     DW 0
+Frequency1    DW 0
+Frequency2    DW 0
+FreqNow       DW 0
+Freq1         DW 0
+Freq2         DW 0
+Freq3         DW 0
+Freq4         DW 0
+Freq5         DW 0
+Freq6         DW 0
+Freq7         DW 0
+Freq8         DW 0
+Freq9         DW 0
+Freq10        DW 0
+Freq11        DW 0
+Freq12        DW 0
+Freq13        DW 0
+Freq14        DW 0
+Freq15        DW 0
+FreqShow      DW 0
+Hexnum        DW 0
+thousands10   DW 0
+thousands     DW 0
+Hundreds      DW 0
+Dozens        DW 0
+unity         DW 0
+
+Mode          DB 0
+Freqflag      DB 0
+
+;-------------------------------------------------------------------------------         
+         
+         RSEG   CSTACK      ; defines stack
+         RSEG   CODE   
+
+;----------------------- Main --------------------------------------------------         
+
+Main     mov.w #03ffh,sp
+         mov.w #WDTPW+WDTHOLD,&WDTCTL
+         
+         call  #ConfSYS
+         call  #ConfLCD
+         mov.b #0x00,Mode
+         
+;----------------------- FSM Loop ----------------------------------------------
+         
+SlpMode  cmp.b #0,Mode
+         jnz   Mode1
+         bis.w #CPUOFF+GIE,SR  ;Enter Sleep Mode LPM0, good nigth!
+         
+Mode1    cmp.b #1,Mode
+         jnz   Mode2
+         call  #CountUp
+         
+Mode2    cmp.b #2,Mode
+         jnz   Mode3
+         call  #PWM
+         
+Mode3    cmp.b #3,Mode
+         jnz   SlpMode
+         call  #freq
+          
+         jmp   SlpMode         
+         nop
+
+;================ Interrupt By Bottun Routine ==================================
+
+PORT2_ISR bit.b    #0x01,Flags
+          jz       Mo2
+          mov.b    #0x01,Mode     ;setup mode1
+          jmp      PortMode
+          
+Mo2       bit.b    #0x02,Flags          
+          jz       Mo3
+          mov.b    #0x02,Mode     ;setup mode2
+          jmp      PortMode
+          
+Mo3       bit.b    #0x08,Flags          
+          jz       Mo0
+          mov.b    #0x03,Mode     ;setup mode3
+          jmp      PortMode          
+
+Mo0       mov.b    #0x00,Mode     ;setup sleep mode
+PortMode  Debounce #0x00f4        ;debounce, for electrical issue
+          bic.w    #CPUOFF,0(sp)  ;wake up dear msp, its action time
+          bic.b    #0x0b,P2IFG    ;reset all Interrupt push-up/down flags
+          reti
+          
+;==================== Timer_A1 Interrupt Routine ===============================
+
+;----------------- Common ISR for TA1_CCR1-4 and overflow  ---------------------
+
+TA11_ISR  add.w  TA1IV,PC                         ; Add Timer_A offset vector
+          nop
+          reti                                    
+          jmp    CCR12_ISR                        ; CCR2 Capture/compare
+          reti                
+          reti                          
+          reti
+          reti
+          reti                                    ; Return from overflow ISR
+
+CCR12_ISR bic.w #CCIE,&TA1CCTL2
+          bic.w #TAIE,&TA1CTL
+          call  #FreqMesu
+          cmp.b #3,Mode
+          jnz   exitmo3
+          bis.w #CCIE,&TA1CCTL2
+          bis.w #TAIE,&TA1CTL
+exitmo3   bic.w #CPUOFF,0(sp)  ;wake up dear msp, its action time
+          RETI
+
+
+
+;==================== Timer_A0 Interrupt Routine ===============================
+
+;----------------- Common ISR for TA0_CCR0 and overflow ------------------------
+
+TA00_ISR   cmp.b #1,Mode
+           jz    TA00_Mode1
+           cmp.b #2,Mode
+           jz    TA00_Mode2
+           bic.w #CPUOFF,0(sp)  ;wake up dear msp, its action time
+           reti
+
+
+TA00_Mode1 call  #CountLCD
+           bic.w #CPUOFF,0(sp)  ;wake up dear msp, its action time
+           reti
+
+
+TA00_Mode2 add.w #26,DutyCycle
+           cmp.w #156,DutyCycle
+           jnz   UpdateDuty
+           mov.w #0,DutyCycle
+UpdateDuty mov.w DutyCycle,TA1CCR1
+           bic.w #CPUOFF,0(sp)  ;wake up dear msp, its action time
+           reti
+
+;-------------------------------------------------------------------------------
+        COMMON  INTVEC                   ; Interrupt Vectors
+;-------------------------------------------------------------------------------
+        
+        ORG     RESET_VECTOR            
+        DW      Main
+        ORG     PORT2_VECTOR
+        DW      PORT2_ISR
+        ORG     TIMER1_A1_VECTOR
+        DW      TA11_ISR
+        ORG     TIMER0_A0_VECTOR
+        DW      TA00_ISR
+        END

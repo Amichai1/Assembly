@@ -1,0 +1,110 @@
+#include "msp430g2553.h"
+Rigth  EQU   0x14
+Left   EQU   0x10
+;======================= Macro Mui Fun =========================================
+
+;------------------------- prep LCD command ------------------------------------
+
+LCD_Macro   MACRO command,delay,RS
+            push.b command
+            push.w delay
+            push.w RS
+            call   #Lcd_cmd
+            ENDM
+            
+;------------------------- Movecursor ------------------------------------------
+            
+Movecursor1 MACRO     Direction1,Times1
+            LOCAL     MoveLoop1
+            mov.w     Times1,R12
+MoveLoop1   LCD_Macro Direction1,#1750,#0
+            dec       R12
+            jnz       MoveLoop1
+            ENDM
+
+;------------------------- rra*4 -----------------------------------------------
+
+rra4Time    MACRO LeftChar
+            rra.b LeftChar
+            rra.b LeftChar
+            rra.b LeftChar
+            rra.b LeftChar
+            ENDM
+            
+;------------------------- print Hex Number ------------------------------------
+
+NumToAscii  MACRO num
+            LOCAL decnum,AsciiFin
+            cmp.b     #10,num
+            jn        decnum
+            add.b     #55,num
+            LCD_Macro num,#1750,#1
+            sub.b     #55,num
+            jmp       AsciiFin
+decnum      add.b     #48,num
+            LCD_Macro num,#1750,#1
+            sub.b     #48,num
+AsciiFin    ENDM           
+           
+            
+;========================= CountUp Module ========================================
+         
+         MODULE CountUp
+         PUBLIC CountUp,CountLCD
+         EXTERN Mode
+         EXTERN Counter,RigthChar,LeftChar,Chars
+         EXTERN Lcd_cmd
+         RSEG   CODE
+        
+;------------------------- Main CountUp ----------------------------------------
+
+CountUp   LCD_Macro   #0x01,#1750,#0  ;Clean LCD
+          LCD_Macro   #0x02,#1750,#0  ;move cursor to the 1st line
+          Movecursor1 #Rigth,#4      ;reset LCD to 0x00 count
+          LCD_Macro   #'0',#1750,#1   
+          Movecursor1 #Rigth,#1
+          LCD_Macro   #'x',#1750,#1
+          Movecursor1 #Rigth,#1
+          LCD_Macro   #'0',#1750,#1
+          Movecursor1 #Rigth,#1
+          LCD_Macro   #'0',#1750,#1               ;the cursor is on the 5 metric
+          mov.w       #0x0000,Counter             ;reset LCD counter
+          
+          ;inisialize 1sec count up clk
+          bis.b   #DIVS0+DIVS1,BCSCTL2
+          mov.w   #CCIE,&TACCTL0                  ; CCR0 interrupt enabled
+          mov.w   #32768,&TACCR0                  ; CCR0 counts to 32768
+          mov.w   #TASSEL_2+MC_1+ID_2,&TACTL      ;only SMCLK works!!!!!
+          
+          
+Count     bis.w     #CPUOFF+GIE,SR                ;Enter Sleep Mode LPM0 between 1sec to the next
+          cmp.b     #1,Mode
+          jz        Count
+RESET2    mov.w     #MC_0,&TA0CTL                 ;stop TIMER0_A
+          bic.w     #CCIE,&TACCTL0                ;CCR0 interrupt disabled
+          LCD_Macro #0x01,#1750,#0                ;Clean LCD
+          LCD_Macro #0x02,#1750,#0                ;move cursor to the 1st line
+          RET
+        
+;-------------------------- CountUp on LCD -------------------------------------
+
+CountLCD   inc.w       Counter
+           and.w       Counter,RigthChar
+           and.w       Counter,LeftChar
+           rra4Time    LeftChar          
+           
+           ;write the num on LCD
+           Movecursor1 #Left,#3
+           NumToAscii  LeftChar
+           Movecursor1 #Rigth,#1
+           NumToAscii  RigthChar
+           
+           mov.w       #0x000f,RigthChar                ;reset RigthChar
+           mov.w       #0x00f0,LeftChar                 ;reset LeftChar
+           RET
+
+           ENDMOD
+          
+;-------------------------------------------------------------------------------
+           
+           END
